@@ -1,0 +1,30 @@
+-- Tenant-scoped uniqueness (ignore soft-deleted rows)
+CREATE UNIQUE INDEX UX_USER_ACCOUNT_TENANT_USERNAME
+  ON SECURITY.USER_ACCOUNT(tenant_id, username)
+  WHERE is_deleted = 0;
+
+CREATE UNIQUE INDEX UX_USER_ACCOUNT_TENANT_EMAIL
+  ON SECURITY.USER_ACCOUNT(tenant_id, email)
+  WHERE is_deleted = 0;
+
+CREATE UNIQUE INDEX UX_ROLE_TENANT_NAME
+  ON SECURITY.ROLE(tenant_id, role_name)
+  WHERE is_deleted = 0;
+
+CREATE UNIQUE INDEX UX_CODE_SET_TENANT_NAME
+  ON COMMON.CODE_SET(tenant_id, code_set_name)
+  WHERE is_deleted = 0;
+
+CREATE UNIQUE INDEX UX_CODE_VALUE_TENANT_SET_CODE
+  ON COMMON.CODE_VALUE(tenant_id, code_set_id, code)
+  WHERE is_deleted = 0;
+
+CREATE UNIQUE INDEX UX_CURRENCY_CODE ON COMMON.CURRENCY(currency_code) WHERE is_deleted = 0;
+CREATE UNIQUE INDEX UX_COUNTRY_ISO2  ON COMMON.COUNTRY(iso2_code) WHERE is_deleted = 0;
+CREATE UNIQUE INDEX UX_COUNTRY_ISO3  ON COMMON.COUNTRY(iso3_code) WHERE is_deleted = 0;
+CREATE UNIQUE INDEX UX_LANGUAGE_CODE ON COMMON.LANGUAGE(language_code) WHERE is_deleted = 0;
+
+-- Helpful seekers
+CREATE INDEX IX_OUTBOX_STATUS_CREATED ON OPS.OUTBOX_EVENT(tenant_id, status, created_at);
+CREATE INDEX IX_AUDIT_TABLE_DATE ON OPS.AUDIT_LOG(table_name, change_date DESC);
+GO

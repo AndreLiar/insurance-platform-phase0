@@ -1,0 +1,35 @@
+name: db-deploy
+on:
+  push:
+    paths:
+      - "infra/sqlserver/**.sql"
+      - ".github/workflows/db-deploy.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sqlcmd
+        run: |
+          sudo ACCEPT_EULA=Y apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev
+          echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> $GITHUB_ENV
+      - name: Apply migrations (order matters)
+        env:
+          DB_SERVER: ${{ secrets.DB_SERVER }}       # e.g. yourserver.database.windows.net
+          DB_NAME:   ${{ secrets.DB_NAME }}
+          DB_USER:   ${{ secrets.DB_USER }}
+          DB_PASS:   ${{ secrets.DB_PASS }}
+        run: |
+          for f in infra/sqlserver/001_schemas.sql \
+                   infra/sqlserver/010_security_tables.sql \
+                   infra/sqlserver/020_common_ops_docs_tables.sql \
+                   infra/sqlserver/030_rls.sql \
+                   infra/sqlserver/040_indexes.sql \
+                   infra/sqlserver/050_triggers_audit_outbox.sql \
+                   infra/sqlserver/060_seed.sql
+          do
+            /opt/mssql-tools/bin/sqlcmd -S $DB_SERVER -d $DB_NAME -U $DB_USER -P $DB_PASS -l 30 -b -i $f
+          done
