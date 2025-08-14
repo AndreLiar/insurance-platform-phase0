@@ -7,7 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Data;
 using Prometheus;
-using BCrypt.Net;
+using BC = BCrypt.Net.BCrypt;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,13 +61,14 @@ app.MapPost("/auth/register", async (HttpContext ctx, IConfiguration cfg) =>
   await using (var cmd = new SqlCommand("SELECT COUNT(*) FROM SECURITY.USER_ACCOUNT WHERE email = @email AND is_deleted = 0", cn))
   {
     cmd.Parameters.AddWithValue("@email", request.Email);
-    var exists = (int)await cmd.ExecuteScalarAsync()! > 0;
+    var count = await cmd.ExecuteScalarAsync();
+    var exists = count != null && (int)count > 0;
     if (exists) return Results.Conflict(new { message = "User already exists" });
   }
 
   // Create new user
   var userId = Guid.NewGuid();
-  var passwordHash = BCrypt.HashPassword(request.Password);
+  var passwordHash = BC.HashPassword(request.Password);
 
   await using (var cmd = new SqlCommand(@"
     INSERT INTO SECURITY.USER_ACCOUNT(id, tenant_id, username, email, password_hash, first_name, last_name, auth_provider)
@@ -113,7 +114,7 @@ app.MapPost("/auth/login", async (HttpContext ctx, IConfiguration cfg) =>
   var lastName = reader.IsDBNull(5) ? "" : reader.GetString(5);
   var isActive = reader.GetBoolean(6);
 
-  if (!isActive || !BCrypt.Verify(request.Password, storedHash))
+  if (!isActive || !BC.Verify(request.Password, storedHash))
     return Results.Unauthorized();
 
   // Generate JWT token
@@ -205,8 +206,8 @@ app.MapGet("/api/security/users", async (HttpContext ctx, IConfiguration cfg) =>
   return Results.Ok(new { currentUser = new { userId, userEmail, tenantId }, users });
 }).RequireAuthorization();
 
-// Add request models at the end
+app.Run();
+
+// Request models
 public record RegisterRequest(string Email, string Password, string? FirstName = null, string? LastName = null);
 public record LoginRequest(string Email, string Password);
-
-app.Run();
