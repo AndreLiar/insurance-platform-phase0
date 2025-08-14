@@ -1,0 +1,74 @@
+name: outbox-relay
+
+on:
+  schedule:
+    # Run every 5 minutes during business hours (UTC)
+    - cron: '*/5 8-18 * * 1-5'
+  workflow_dispatch: {}
+
+jobs:
+  process-outbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install sqlcmd
+        run: |
+          sudo ACCEPT_EULA=Y apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev
+          echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> $GITHUB_ENV
+          
+      - name: Process Outbox Events
+        env:
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+        run: |
+          echo "🔄 Processing outbox events at $(date)"
+          
+          # Get pending events and mark them as processed
+          /opt/mssql-tools/bin/sqlcmd -S $DB_SERVER -d $DB_NAME -U $DB_USER -P $DB_PASS -l 30 -Q "
+          DECLARE @events TABLE (id UNIQUEIDENTIFIER, tenant_id UNIQUEIDENTIFIER, event_type NVARCHAR(100), event_data NVARCHAR(MAX));
+          
+          -- Select pending events (limit 50 per run)
+          INSERT INTO @events (id, tenant_id, event_type, event_data)
+          SELECT TOP 50 id, tenant_id, event_type, event_data 
+          FROM OPS.OUTBOX_EVENT 
+          WHERE status = 'PENDING' 
+          ORDER BY created_at;
+          
+          -- Mark events as processed
+          UPDATE oe SET 
+            status = 'SENT',
+            processed_at = SYSUTCDATETIME()
+          FROM OPS.OUTBOX_EVENT oe
+          INNER JOIN @events e ON oe.id = e.id;
+          
+          -- Log processed events
+          SELECT 
+            COUNT(*) as processed_count,
+            STRING_AGG(event_type, ', ') as event_types
+          FROM @events;
+          "
+          
+          echo "✅ Outbox relay completed at $(date)"
+
+      - name: Log Outbox Statistics
+        env:
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+        run: |
+          echo "📊 Outbox Event Statistics:"
+          /opt/mssql-tools/bin/sqlcmd -S $DB_SERVER -d $DB_NAME -U $DB_USER -P $DB_PASS -l 30 -Q "
+          SELECT 
+            status,
+            COUNT(*) as count,
+            MIN(created_at) as oldest,
+            MAX(created_at) as newest
+          FROM OPS.OUTBOX_EVENT 
+          GROUP BY status
+          ORDER BY status;
+          "
